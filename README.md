@@ -1,6 +1,23 @@
+<img src="assests/monte.png" alt="MONTE icon" width="150" height="150"/>
+
 # MONTE
 
 **MONTE**: Methylation-based Observation Normalization and Tumor purity Estimation
+
+## Quick naviagation
+
+- [MONTE](#monte)
+  - [Quick naviagation](#quick-naviagation)
+  - [Installation](#installation)
+  - [Instruction and usages](#instruction-and-usages)
+    - [Input data](#input-data)
+    - [Training the model](#training-the-model)
+    - [Purity esitmation](#purity-esitmation)
+    - [Beta adjustment](#beta-adjustment)
+    - [Using pretrained models](#using-pretrained-models)
+    - [Save and load](#save-and-load)
+  - [Analysis](#analysis)
+  - [Citation](#citation)
 
 ## Installation
 
@@ -17,17 +34,19 @@ conda activate your_env_name
 pip install .
 ```
 
-## Instruction
+## Instruction and usages
+
+### Input data
 
 ### Training the model
 
-### Purity Esitmation
+### Purity esitmation
 
 ### Beta adjustment
 
 ### Using pretrained models
 
-### Save and load the trained model
+### Save and load
 
 ## Analysis
 
