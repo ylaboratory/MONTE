@@ -1,5 +1,7 @@
 # MONTE
 
+**MONTE**: Methylation-based Observation Normalization and Tumor purity Estimation
+
 ## Installation
 
 ```python
@@ -11,12 +13,22 @@ cd MONTE
 conda activate your_env_name
 # mamba activate your_env_name
 
-# in the alpine folder
+# in the MONTE folder
 pip install .
 ```
 
 ## Instruction
 
+### Training the model
+
+### Purity Esitmation
+
+### Beta adjustment
+
+### Using pretrained models
+
+### Save and load the trained model
+
 ## Analysis
 
-## Reference
+## Citation
