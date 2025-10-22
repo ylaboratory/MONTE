@@ -58,7 +58,7 @@ class Monte(torch.nn.Module):
         X: pd.DataFrame,
         P: pd.Series,
         batch_size: Optional[int] = None,
-    ):
+    ) -> "Monte":
         self.ref_probe_names = X.columns.tolist()
 
         X_tensor = self._validate_input(X).to(self.device)
@@ -98,6 +98,7 @@ class Monte(torch.nn.Module):
         self.H = pd.DataFrame(H.detach().cpu().numpy(), columns=self.ref_probe_names)
         self.history = pd.DataFrame(history, columns=["recon_loss"])
         self.is_fitted = True
+        return self
 
     def transform(
         self,
