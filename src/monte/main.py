@@ -85,7 +85,7 @@ class Monte(torch.nn.Module):
                 numerator = Pb.T @ Xb
                 denominator = ((Pb.T @ Pb) @ H).clamp(min=self.eps)
                 H *= numerator / denominator
-                H = H.clamp(max=1)
+                # H = H.clamp(max=1)
 
             # --- Epoch summary
             with torch.no_grad():
@@ -228,11 +228,11 @@ class Monte(torch.nn.Module):
         unseen_probes = set(probes) - set(ref_probes)
 
         if len(missing_probes) > 0 or len(unseen_probes) > 0:
-            if len(missing_probes) > 0:
+            if len(missing_probes) > 0 and self.verbose:
                 print(
                     f"There are missing probes in the input data. Please check the Monte.get_overlap_probes(your_probes) method for the overlap probes."
                 )
-            if len(unseen_probes) > 0:
+            if len(unseen_probes) > 0 and self.verbose:
                 print(
                     f"There are unseen probes in the input data. Please check the Monte.get_overlap_probes(your_probes) method for the overlap probes."
                 )
