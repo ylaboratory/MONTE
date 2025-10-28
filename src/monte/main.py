@@ -11,6 +11,8 @@ from scipy.optimize import nnls
 class Monte(torch.nn.Module):
     def __init__(
         self,
+        n_components: int,
+        lam: float = 0.01,
         max_iter: int = 200,
         tol: float = 1e-8,
         device: str = "cpu",
@@ -19,6 +21,8 @@ class Monte(torch.nn.Module):
         verbose: bool = False,
     ):
         super().__init__()
+        self.n_components: int = n_components
+        self.lam: float = lam
         self.max_iter: int = max_iter
         self.tol: float = tol
         self.device: torch.device = torch.device(device)
@@ -35,7 +39,7 @@ class Monte(torch.nn.Module):
         self.is_fitted: bool = False
 
     # ------------------------------------------------------------------
-    def _init_matrices(self, n_features):
+    def _init_matrices(self, n_samples, n_features):
         """Initialize non-negative factors."""
         torch.manual_seed(self.random_state)
         if self.device.type == "cuda":
@@ -44,19 +48,23 @@ class Monte(torch.nn.Module):
         def rand(shape):
             return torch.rand(shape, device=self.device, dtype=self.dtype)
 
-        H = rand((2, n_features))
-        return H
+        B = rand((2, n_features))
+        W = rand((n_samples, self.n_components))
+        H = rand((self.n_components, n_features))
+        return B, W, H
 
     # ------------------------------------------------------------------
 
-    def loss_fn(self, H, X, P):
-        rec = 0.5 * torch.norm((X - P @ H) ** 2)
-        return rec.item()
+    def loss_fn(self, X, P, B, W, H) -> Tuple[float, float]:
+        rec = 0.5 * torch.norm(X - P @ B - W @ H) ** 2
+        reg = 0.5 * self.lam * torch.norm(B @ H.T) ** 2
+        return rec.item(), reg.item()
 
     def fit(
         self,
         X: pd.DataFrame,
         P: pd.Series,
+        block_size: Optional[int] = None,
         batch_size: Optional[int] = None,
     ) -> "Monte":
         self.ref_probe_names = X.columns.tolist()
@@ -65,45 +73,96 @@ class Monte(torch.nn.Module):
         P_tensor = self._validate_purity(P).to(self.device)
 
         n_samples, n_features = X_tensor.shape
+        
+        # set batch and block sizes
         if batch_size is None:
             batch_size = n_samples
         else:
             batch_size = int(min(batch_size, n_samples))
 
-        # --- Initialize model parameters
-        H = self._init_matrices(n_features)
+        if block_size is None:
+            block_size = n_features
+        else:
+            block_size = int(min(block_size, n_features))
 
-        dataset = TensorDataset(X_tensor, P_tensor)
-        dataloader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=True, drop_last=False
-        )
+        # --- Initialize model parameters
+        B, W, H = self._init_matrices(n_samples, n_features)
+
+        indices = torch.arange(n_samples)
+        dataset = TensorDataset(X_tensor, P_tensor, indices)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=False)
 
         history = []
-        for it in range(1, self.max_iter + 1):
-            # --- iterate over mini-batches
-            for Xb, Pb in dataloader:
-                numerator = Pb.T @ Xb
-                denominator = ((Pb.T @ Pb) @ H).clamp(min=self.eps)
-                H *= numerator / denominator
-                # H = H.clamp(max=1)
 
-            # --- Epoch summary
+        for it in range(1, self.max_iter + 1):
+            for Xb, Pb, idx in dataloader:
+                with torch.no_grad():
+                    Wb = W[idx]  # batch slice of W
+
+                    # --- Precompute small reusable matrices ---
+                    PtP = Pb.T @ Pb                # (2, 2)
+                    PtW = Pb.T @ Wb                # (2, n_comp)
+                    # HtH = H @ H.T                  # (n_comp, n_comp)
+                    # BtB = B @ B.T                  # (2, 2)
+
+                    # === update B blockwise ===
+                    for start in range(0, n_features, block_size):
+                        end = min(start + block_size, n_features)
+                        X_blk = Xb[:, start:end]       # (bs, f_blk)
+                        B_blk = B[:, start:end]        # (2, f_blk)
+                        H_blk = H[:, start:end]        # (n_comp, f_blk)
+
+                        numerator = Pb.T @ X_blk + 10 * B_blk
+                        temp = B_blk @ H_blk.T
+                        denominator = (PtP @ B_blk) + (PtW @ H_blk) + self.lam * (temp @ H_blk)
+                        B_blk *= numerator / denominator.clamp(min=self.eps)
+                        B_blk = B_blk.clamp(min=self.eps, max=1)
+                        B[:, start:end] = B_blk
+
+                    # === update W ===
+                    BHt = B @ H.T                    # (2, n_comp)
+                    HHt = H @ H.T                    # (n_comp, n_comp)
+                    numerator = Xb @ H.T             # (bs, n_comp)
+                    denominator = Pb @ BHt + Wb @ HHt
+                    Wb *= numerator / denominator.clamp(min=self.eps)
+                    Wb = Wb.clamp(min=self.eps, max=1)
+                    W[idx] = Wb  # write back updates
+
+                    # === update H blockwise ===
+                    Wb = W[idx]  # refreshed batch slice of W
+                    WtP = Wb.T @ Pb                # (n_comp, 2)
+                    WtW = Wb.T @ Wb                # (n_comp, n_comp)
+
+                    for start in range(0, n_features, block_size):
+                        end = min(start + block_size, n_features)
+                        X_blk = Xb[:, start:end]
+                        H_blk = H[:, start:end]
+                        B_blk = B[:, start:end]
+
+                        numerator = Wb.T @ X_blk
+                        denominator = (WtP @ B_blk) + (WtW @ H_blk) + self.lam * (H_blk @ (B_blk.T @ B_blk))
+                        H_blk *= numerator / denominator.clamp(min=self.eps)
+                        H_blk = H_blk.clamp(min=self.eps, max=1)
+                        H[:, start:end] = H_blk
+
+            # --- Epoch summary ---
             with torch.no_grad():
-                loss_vals = self.loss_fn(H, X_tensor, P_tensor)
+                loss_vals = self.loss_fn(X_tensor, P_tensor, B, W, H)
                 history.append(loss_vals)
 
-            if self.verbose:
-                print(f"Iter {it:03d}: total_loss={loss_vals:.4e}")
+                if self.verbose:
+                    print(f"Iter {it:03d}: total_loss={loss_vals[0]:.4e}, reg_loss={loss_vals[1]:.4e}")
 
+        self.B = pd.DataFrame(B.detach().cpu().numpy(), columns=self.ref_probe_names)
         self.H = pd.DataFrame(H.detach().cpu().numpy(), columns=self.ref_probe_names)
-        self.history = pd.DataFrame(history, columns=["recon_loss"])
+        self.history = pd.DataFrame(history, columns=["reconstruction_loss", "regularization_loss"])
         self.is_fitted = True
         return self
 
     def transform(
         self,
         X: pd.DataFrame,
-    ) -> np.ndarray:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Estimate non-negative W for X ≈ W @ H using NNLS per sample.
         Uses scipy.optimize.nnls (A w = b with A = H.T, b = x).
@@ -115,7 +174,9 @@ class Monte(torch.nn.Module):
         validated_probes = self._validate_probes(self.ref_probe_names, probe_names)
 
         # convert H to numpy, and select validated probes
-        A = self.H[validated_probes].values.T  # (n_features, 2)
+        B = self.B[validated_probes].values.T  # (n_features, 2)
+        H = self.H[validated_probes].values.T  # (n_features, n_components)
+        A = np.concatenate([B, H], axis=1)  # (n_features, 2 + n_components)
 
         # subset X to validated probes
         X_tensor = self._validate_input(X.loc[:, validated_probes])
@@ -127,22 +188,23 @@ class Monte(torch.nn.Module):
             w, _ = nnls(A, b)  # returns (n_components,)
             W_rows.append(w)
 
-        W_np = np.vstack(W_rows)  # (n_samples, 2)
-        W = torch.tensor(W_np, dtype=self.dtype)
-        W = W / W.sum(dim=1, keepdim=True)  # normalize rows to sum to 1
-        return W.detach().cpu().numpy()
+        W_full = np.vstack(W_rows)  # (n_samples, 2 + n_components)
+        P_hat = W_full[:, 0:2]  # (n_samples, 2)
+        P_hat /= P_hat.sum(axis=1, keepdims=True)
+        W_hat = W_full[:, 2:]  # (n_samples, n_components)
+        return P_hat, W_hat
 
     def fit_transform(
         self, X: pd.DataFrame, P: pd.Series, batch_size: Optional[int] = None
-    ) -> np.ndarray:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         self.fit(X, P, batch_size=batch_size)
-        W = self.transform(X)
-        return W
+        P_hat, W_hat = self.transform(X)
+        return P_hat, W_hat
 
     def predict_purity(self, X: pd.DataFrame) -> pd.Series:
         self._check_is_fitted()
-        W = self.transform(X)
-        return pd.Series(W[:, 0])
+        P_hat, _ = self.transform(X)
+        return pd.Series(P_hat[:, 0])
 
     def adjust_beta(self, X: pd.DataFrame, target_purity: float = 1) -> pd.DataFrame:
         self._check_is_fitted()
@@ -151,21 +213,18 @@ class Monte(torch.nn.Module):
         validated_probes = self._validate_probes(self.ref_probe_names, probe_names)
 
         X = X.loc[:, validated_probes]
-        H = self.H[validated_probes].to_numpy()
+        B = self.B[validated_probes].to_numpy()
 
-        current_purity = self.transform(X)
-        current_purity = torch.tensor(current_purity, dtype=self.dtype)
-        X_tensor = self._validate_input(X)
-        H_tensor = torch.tensor(H, dtype=self.dtype)
+        P_hat, _ = self.transform(X)
 
-        target_purity_matrix = torch.zeros_like(current_purity)
+        target_purity_matrix = np.zeros_like(P_hat)
         target_purity_matrix[:, 0] = target_purity
         target_purity_matrix[:, 1] = 1 - target_purity
 
-        X_adjusted = X_tensor + (target_purity_matrix - current_purity) @ H_tensor
+        X_adjusted = (target_purity_matrix - P_hat) @ B
 
-        X_adjusted = X_adjusted.clamp(min=0, max=1)
-        return pd.DataFrame(X_adjusted.cpu().numpy(), columns=X.columns, index=X.index)
+        X_adjusted = X + np.clip(X_adjusted, 0, 1)
+        return pd.DataFrame(X_adjusted, columns=X.columns, index=X.index)
 
     def save(self, path: str):
         """Save the learned model parameters and metadata."""
@@ -174,9 +233,12 @@ class Monte(torch.nn.Module):
 
         torch.save(
             {
+                "B": self.B.to_dict(),
                 "H": self.H.to_dict(),
                 "ref_probe_names": self.ref_probe_names,
                 "config": {
+                    "n_components": self.n_components,
+                    "lam": self.lam,
                     "max_iter": self.max_iter,
                     "tol": self.tol,
                     "dtype": str(self.dtype),
@@ -202,6 +264,8 @@ class Monte(torch.nn.Module):
         dtype = getattr(torch, dtype_attr, torch.float64)
 
         model = cls(
+            n_components=config["n_components"],
+            lam=config["lam"],
             max_iter=config["max_iter"],
             tol=config["tol"],
             device=config["device"],
@@ -210,6 +274,7 @@ class Monte(torch.nn.Module):
             verbose=config["verbose"],
         )
 
+        model.B = pd.DataFrame.from_dict(checkpoint["B"])
         model.H = pd.DataFrame.from_dict(checkpoint["H"])
         model.ref_probe_names = checkpoint["ref_probe_names"]
         model.is_fitted = True
