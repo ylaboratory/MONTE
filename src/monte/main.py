@@ -4,13 +4,6 @@ import pandas as pd
 from typing import List
 
 class Monte:
-    """
-    Minimal, elegant purity estimator in probe space.
-    - Learns alpha (baseline) and beta (tumor direction) via closed-form ridge.
-    - Predicts purity on any subset/missing probes with a weighted projection
-      that is inherently invariant to subset size.
-    - Reconstructs pure tumor profiles with the linear mixing model.
-    """
 
     def __init__(self, lam: float=1e-6, eps:float =1e-8):
         self.lam = lam
@@ -65,7 +58,6 @@ class Monte:
         self.is_fitted = True
         return self
 
-    # --------------- PREDICT PURITY ----------------
     def predict_purity(self, X: pd.DataFrame) -> pd.Series:
 
         if not isinstance(X, pd.DataFrame):
@@ -89,7 +81,6 @@ class Monte:
         p_hat = num / den
         return pd.Series(np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity")
 
-    # --------------- RECONSTRUCT TUMOR -------------
     def purify_values(self, X: pd.DataFrame, pmin=0.05) -> pd.DataFrame:
         """
         Pure tumor reconstruction from the linear mix: T = alpha + (X - alpha)/p.
