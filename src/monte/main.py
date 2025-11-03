@@ -48,7 +48,7 @@ class Monte:
         # unbiased variance with df≈n-2 (fit alpha & beta)
         dof = max(n - 2, 1)
         sig2 = (resid**2).sum(axis=0) / dof
-        w = 1.0 / (sig2 + 1e-6)                    # stable inverse-variance weights
+        w = beta**2 / (sig2 + 1e-6)                    # stable inverse-variance weights
 
         # Store
         self.alpha_ = pd.Series(alpha, index=X.columns, name="alpha")
