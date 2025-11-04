@@ -142,7 +142,7 @@ class Monte:
 
         return pd.Series(np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity")
 
-    def purify_values(self, X: pd.DataFrame, pmin=0.05) -> pd.DataFrame:
+    def purify_values(self, X: pd.DataFrame) -> pd.DataFrame:
         """
         Pure tumor reconstruction from the linear mix: T = intercept_ + (X - intercept_)/p.
         """
@@ -156,12 +156,11 @@ class Monte:
         X_arr = X.reindex(columns=self.probe_ids).values.astype(float)
 
         # predict purity
-        p_pred = self.predict_purity(X)
-
-        a = np.asarray(self.intercept_, dtype=float)
-        p = np.maximum(np.asarray(p_pred, float).ravel(), pmin)
-        T = a + (X_arr - a) / p[:, None]
-        return pd.DataFrame(T, index=X.index, columns=self.probe_ids)
+        p_pred = np.asarray(self.predict_purity(X))
+        delta_p = (1 - p_pred)
+        coef_ = np.asarray(self.coef_)
+        X_arr += delta_p[:, None] @ coef_[None, :]
+        return pd.DataFrame(X_arr, index=X.index, columns=self.probe_ids)
 
     def save(self, filepath: str):
         """Save the entire model into a single binary file."""
