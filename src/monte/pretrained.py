@@ -8,6 +8,7 @@ _PRETRAINED = {
     "PAN-CANCER": "PAN-CANCER.pkl",
 }
 
+
 def from_pretrained(name: str) -> Monte:
     if name not in _PRETRAINED:
         raise ValueError(
