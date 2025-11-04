@@ -66,9 +66,6 @@ class Monte:
         resid = X_arr - fitted  # (n, m)
         dof = max(n - 2, 1)
         sig2 = (resid**2).sum(axis=0) / dof
-        self.residual_variance = pd.Series(
-            sig2, index=X.columns, name="residual_variance"
-        )
 
         # esitmate prior
         s0, d0 = self._estimate_prior_params(sig2)
@@ -76,9 +73,6 @@ class Monte:
 
         # posterior variances
         sig2_post = (d0 * s0 + dof * sig2) / (d0 + dof)
-        self.moderated_variance = pd.Series(
-            sig2_post, index=X.columns, name="moderated_variance"
-        )
 
         # moderated t-statistics
         vbeta = 1.0 / ((self.sample_weights_ * pc) @ pc + self.lam)
@@ -101,6 +95,12 @@ class Monte:
         self.pvals = pd.Series(pvals, index=X.columns, name="p_value")
         self.p_adj = pd.Series(p_adj, index=X.columns, name="p_adj")
         self.probe_mean = pd.Series(X_mean, index=X.columns, name="probe_mean")
+        self.residual_variance = pd.Series(
+            sig2, index=X.columns, name="residual_variance"
+        )
+        self.moderated_variance = pd.Series(
+            sig2_post, index=X.columns, name="moderated_variance"
+        )
         self.purity_mean = p_mean
         self.probe_ids = list(X.columns)
         self.is_fitted = True
@@ -127,20 +127,24 @@ class Monte:
             raise ValueError("Model has not been fitted yet. Fit before purifying.")
 
         X_arr = X.reindex(columns=self.probe_ids).values.astype(float)
-    
+
         coef = np.asarray(self.coef_)
         w = np.asarray(self.w_)
         obs = np.isfinite(X_arr)
-        
+
         # center by training mean
         Xc = X_arr - self.probe_mean.values  # store self.X_mean in fit()
-        
-        # weighted projection onto coef
-        numerator   = np.nansum(obs * w * Xc * coef, axis=1)
-        denominator = np.nansum(obs * w * (coef * coef), axis=1) + self.eps
-        p_hat = numerator / denominator + self.purity_mean  # add back training purity mean
 
-        return pd.Series(np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity")
+        # weighted projection onto coef
+        numerator = np.nansum(obs * w * Xc * coef, axis=1)
+        denominator = np.nansum(obs * w * (coef * coef), axis=1) + self.eps
+        p_hat = (
+            numerator / denominator + self.purity_mean
+        )  # add back training purity mean
+
+        return pd.Series(
+            np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity"
+        )
 
     def purify_values(self, X: pd.DataFrame) -> pd.DataFrame:
         """
@@ -157,7 +161,7 @@ class Monte:
 
         # predict purity
         p_pred = np.asarray(self.predict_purity(X))
-        delta_p = (1 - p_pred)
+        delta_p = 1 - p_pred
         coef_ = np.asarray(self.coef_)
         X_arr += delta_p[:, None] @ coef_[None, :]
         return pd.DataFrame(X_arr, index=X.index, columns=self.probe_ids)
