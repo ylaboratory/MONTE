@@ -7,8 +7,9 @@ from statsmodels.stats.multitest import multipletests
 
 
 class Monte:
-    def __init__(self, lam: float = 1e-6, eps: float = 1e-10):
+    def __init__(self, lam: float = 1e-6, confidence_level: float = 0.95, eps: float = 1e-10):
         self.lam = lam
+        self.confidence_level = confidence_level
         self.eps = eps
         self.is_fitted: bool = False
         self.coef_: pd.Series = pd.Series()  # (m,) tumor direction
@@ -79,9 +80,16 @@ class Monte:
         t_moderated = coef_ / np.sqrt(sig2_post * vbeta)
         df_total = d0 + dof
 
+        # confidence intervals
+        alpha = 1 - self.confidence_level
+        t_crit = t.ppf(1 - alpha / 2, df_total)
+        margin_of_error = t_crit * np.sqrt(sig2_post * vbeta)
+        upper_CI = coef_ + margin_of_error
+        lower_CI = coef_ - margin_of_error
+
         # test statistics p-values
         pvals = 2 * (1 - t.cdf(np.abs(t_moderated), df_total))
-        _, p_adj, _, _ = multipletests(pvals, alpha=0.05, method="fdr_bh")
+        _, p_adj, _, _ = multipletests(pvals, alpha=alpha, method="fdr_bh")
 
         # w = 1.0 / (sig2_used + 1e-6)                    # stable inverse-variance weights
         w = (coef_**2) / (sig2_post + 1e-6)  # SNR weights
@@ -108,6 +116,8 @@ class Monte:
             {
                 "intercept_": intercept_,
                 "coef_": coef_,
+                "upper_CI": upper_CI,
+                "lower_CI": lower_CI,
                 "weight": w,
                 "t_moderated": t_moderated,
                 "p_value": pvals,
@@ -145,74 +155,6 @@ class Monte:
         return pd.Series(
             np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity"
         )
-
-    # def predict_purity(self, X: pd.DataFrame, alpha: float = 0.05, top_k: Optional[int] = None) -> pd.Series:
-    #     """
-    #     Predict tumor purity using a hybrid approach:
-    #     1. Select significant probes (p_adj < alpha or top-K by |t|)
-    #     2. Use SNR weights for those probes
-
-    #     Parameters
-    #     ----------
-    #     X : pd.DataFrame
-    #         New methylation data (samples × probes).
-    #     alpha : float, default=0.05
-    #         FDR threshold for probe selection.
-    #     top_k : int, optional
-    #         If given, select top-K probes by absolute moderated t-statistic instead of p_adj.
-
-    #     Returns
-    #     -------
-    #     pd.Series
-    #         Predicted purity for each sample.
-    #     """
-    #     if not isinstance(X, pd.DataFrame):
-    #         raise ValueError("X must be a pandas DataFrame (samples × probes)")
-    #     if not self.is_fitted:
-    #         raise ValueError("Model has not been fitted yet. Call `.fit()` first.")
-
-    #     # -------------------------------------------------------------------------
-    #     # Step A: probe selection
-    #     # -------------------------------------------------------------------------
-    #     if top_k is not None:
-    #         # Select top-K by |t| statistic
-    #         top_idx = np.argsort(np.abs(self.t_moderated.values))[::-1][:top_k]
-    #         selected_probes = [self.t_moderated.index[i] for i in top_idx]
-    #     else:
-    #         # Select by significance (FDR threshold)
-    #         selected_probes = self.p_adj.index[self.p_adj < alpha].tolist()
-
-    #     if len(selected_probes) == 0:
-    #         raise ValueError("No probes passed selection criteria — relax alpha or top_k.")
-
-    #     # -------------------------------------------------------------------------
-    #     # Step B: restrict to selected probes and compute SNR-based weights
-    #     # -------------------------------------------------------------------------
-    #     coef = self.coef_.reindex(selected_probes).values
-    #     w_snr = self.w_.reindex(selected_probes).values
-    #     probe_mean = self.probe_mean.reindex(selected_probes).values
-
-    #     # -------------------------------------------------------------------------
-    #     # Step C: prepare new data
-    #     # -------------------------------------------------------------------------
-    #     X_sel = X.reindex(columns=selected_probes).values.astype(float)
-    #     obs = np.isfinite(X_sel)
-
-    #     # Center new data by training mean of selected probes
-    #     Xc = X_sel - probe_mean  # store self.probe_mean in fit()
-
-    #     # -------------------------------------------------------------------------
-    #     # Step D: weighted projection using SNR weights
-    #     # -------------------------------------------------------------------------
-    #     numerator = np.nansum(obs * Xc * coef, axis=1)
-    #     denominator = np.nansum(obs * (coef ** 2), axis=1) + self.eps
-    #     p_hat = numerator / denominator + self.purity_mean  # add back training purity mean
-
-    #     # -------------------------------------------------------------------------
-    #     # Step E: output
-    #     # -------------------------------------------------------------------------
-    #     return pd.Series(np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity")
-    
     
     def purify_values(self, X: pd.DataFrame) -> pd.DataFrame:
         """
