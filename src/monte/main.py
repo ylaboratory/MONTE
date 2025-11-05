@@ -128,7 +128,7 @@ class Monte:
 
         return self
 
-    def predict_purity(self, X: pd.DataFrame) -> pd.Series:
+    def predict_purity(self, X: pd.DataFrame, top_n: Optional[int] = None) -> pd.Series:
         if not isinstance(X, pd.DataFrame):
             raise ValueError(
                 "X must be a pandas DataFrame (samples, probes / subset of probes)"
@@ -136,14 +136,18 @@ class Monte:
         if not self.is_fitted:
             raise ValueError("Model has not been fitted yet. Fit before purifying.")
 
-        X_arr = X.reindex(columns=self.probe_ids).values.astype(float)
+        selected_probes = self.probe_ids
+        if top_n is not None:
+            selected_probes = self.t_moderated.abs().nlargest(top_n).index.to_list()
 
-        coef = np.asarray(self.coef_)
-        w = np.asarray(self.w_)
+        X_arr = X.reindex(columns=selected_probes).values.astype(float)
+
+        coef = np.asarray(self.coef_.reindex(index=selected_probes))
+        w = np.asarray(self.w_.reindex(index=selected_probes))
         obs = np.isfinite(X_arr)
 
         # center by training mean
-        Xc = X_arr - self.probe_mean.values  # store self.X_mean in fit()
+        Xc = X_arr - self.probe_mean.reindex(index=selected_probes).values  # store self.X_mean in fit()
 
         # weighted projection onto coef
         numerator = np.nansum(obs * w * Xc * coef, axis=1)
