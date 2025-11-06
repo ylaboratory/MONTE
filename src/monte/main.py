@@ -4,8 +4,6 @@ import pandas as pd
 from scipy.stats import t
 from typing import List, Tuple, Optional
 from statsmodels.stats.multitest import multipletests
-from sklearn.model_selection import KFold
-
 
 class Monte:
     def __init__(self, lam: float = 1e-6, confidence_level: float = 0.95, eps: float = 1e-10):
@@ -17,6 +15,8 @@ class Monte:
         self.intercept_: pd.Series = pd.Series()  # (m,) baseline
         self.w_: pd.Series = pd.Series()  # (m,) probe weights (inverse noise)
         self.probe_ids: List = []
+        self.best_top_n: Optional[int] = None
+        self.cv_results_: Optional[dict] = None
 
     # --------------------- FIT ---------------------
     def fit(
@@ -140,6 +140,9 @@ class Monte:
         selected_probes = self.probe_ids
         if top_n is not None:
             selected_probes = self.t_moderated.abs().nlargest(top_n).index.to_list()
+        elif self.best_top_n is not None:
+            selected_probes = self.t_moderated.abs().nlargest(self.best_top_n).index.to_list()
+            print(f"Using best_top_n={self.best_top_n} for prediction.")
 
         X_arr = X.reindex(columns=selected_probes).values.astype(float)
 
