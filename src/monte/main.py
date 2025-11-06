@@ -2,6 +2,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from scipy.stats import t
+from itertools import combinations
 from typing import List, Tuple, Optional
 from statsmodels.stats.multitest import multipletests
 
@@ -200,25 +201,50 @@ class Monte:
 
     @staticmethod
     def _calc_sample_weights(additional_meta: pd.DataFrame) -> pd.Series:
-        # check and grab columns from additional meta : ABSOLUTE, ESTIMATE, LUMP, IHC
-        score_cols = ["ABSOLUTE", "ESTIMATE", "LUMP", "IHC", "CPE"]
-        for col in score_cols:
-            if col not in additional_meta.columns:
-                print(f"Warning: additional_meta missing expected column '{col}'")
-        compare_cols = ["ABSOLUTE", "ESTIMATE", "LUMP", "IHC"]
-        scores_cols = additional_meta[score_cols]
 
-        # use elementwise subtraction then abs() to avoid type-checker issues with Series methods
-        # diffs = [(scores_cols[col] - scores_cols["CPE"]).abs() for col in compare_cols]
-        diffs = [(scores_cols[col] - scores_cols["CPE"]).abs() for col in compare_cols]
+        score_cols = ["ABSOLUTE", "ESTIMATE", "LUMP", "IHC"]
 
-        diffs = pd.DataFrame(diffs).T
-        score_agreement = diffs.mean(axis=1, skipna=True).values
+        available_cols = [col for col in score_cols if col in additional_meta.columns]
+        missing_cols = [col for col in score_cols if col not in additional_meta.columns]
+        if missing_cols:
+            print(f"Warning: additional_meta missing expected columns: {missing_cols}")
 
-        weights = np.ones_like(score_agreement, dtype=float) - np.asarray(
-            score_agreement, dtype=float
-        )
-        return pd.Series(weights, index=additional_meta.index, name="sample_weights")
+        if len(available_cols) < 2:
+            raise ValueError(
+                f"Need at least two of {score_cols} to compute agreement; only got {available_cols}"
+            )
+
+        scores = additional_meta[available_cols]
+
+        # Parameters controlling penalty for few raters and disagreement
+        alpha = 0.5  # penalty for number of available scores
+        beta = 1.0   # shape parameter for agreement strength
+        min_raters = 2
+
+        def compute_weight(row):
+            vals = row.dropna().values
+            n = len(vals)
+            if n < min_raters:
+                return 0.0
+
+            # Mean absolute pairwise difference
+            if n == 1:
+                mean_abs_diff = 0.0
+            else:
+                diffs = [abs(a - b) for a, b in combinations(vals, 2)]
+                mean_abs_diff = np.mean(diffs)
+
+            # Agreement and weight adjustment
+            agreement = 1.0 - mean_abs_diff               # [0,1], higher = more consistent
+            rater_factor = (n / len(available_cols)) ** alpha
+            w = (agreement ** beta) * rater_factor
+
+            return max(0.0, min(1.0, w))
+
+        weights = scores.apply(compute_weight, axis=1)
+        weights.name = "sample_weight"
+
+        return weights
 
     @staticmethod
     def _estimate_prior_params(s2: np.ndarray) -> Tuple:
