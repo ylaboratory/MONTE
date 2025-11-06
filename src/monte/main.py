@@ -4,6 +4,7 @@ import pandas as pd
 from scipy.stats import t
 from typing import List, Tuple, Optional
 from statsmodels.stats.multitest import multipletests
+from sklearn.model_selection import KFold
 
 
 class Monte:
@@ -205,7 +206,9 @@ class Monte:
         scores_cols = additional_meta[score_cols]
 
         # use elementwise subtraction then abs() to avoid type-checker issues with Series methods
+        # diffs = [(scores_cols[col] - scores_cols["CPE"]).abs() for col in compare_cols]
         diffs = [(scores_cols[col] - scores_cols["CPE"]).abs() for col in compare_cols]
+
         diffs = pd.DataFrame(diffs).T
         score_agreement = diffs.mean(axis=1, skipna=True).values
 
