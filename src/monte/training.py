@@ -14,12 +14,12 @@ def train_with_cv(
     eps: float = 1e-10,
 ) -> "Monte":
     
-    n_probes = X.shape[1]
-    max_top_n = min(100_000, n_probes)
-
     # top_n candidates
     base_candidates = [5, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 
                        10_000, 25_000, 50_000, 100_000, 150_000]
+    n_probes = X.shape[1]
+    max_top_n = min(base_candidates[-1], n_probes)
+
     top_n_candidates = [n for n in base_candidates if n <= max_top_n]
     if top_n_candidates[-1] < max_top_n:
         top_n_candidates.append(max_top_n)
@@ -36,9 +36,7 @@ def train_with_cv(
 
         for top_n in top_n_candidates:
             preds = model.predict_purity(X_test, top_n=top_n)
-            preds_arr = np.asarray(preds, dtype=float)
-            y_arr = np.asarray(y_test, dtype=float)
-            mse = np.mean((preds_arr - y_arr) ** 2)
+            mse = ((preds.values - y_test.values) ** 2).mean()
             mse_results[top_n].append(mse)
 
     mean_mse = {k: np.mean(v) for k, v in mse_results.items()}

@@ -24,7 +24,7 @@ class Monte:
         self,
         X: pd.DataFrame,
         purity: pd.Series,
-        sample_weights: Optional[pd.Series] = None,
+        sample_weights: Optional[np.ndarray] = None,
     ) -> "Monte":
         """
         X   : n x m methylation (rows=samples, cols=probes)
@@ -37,15 +37,13 @@ class Monte:
             raise ValueError("purity must be a pandas Series (samples,)")
 
         if sample_weights is not None:
-            if not isinstance(sample_weights, pd.Series):
-                raise ValueError("sample_weights must be a pandas Series (samples,)")
-            elif sample_weights.isna().any():
+            if not isinstance(sample_weights, np.ndarray):
+                raise ValueError("sample_weights must be a np.ndarray (samples,)")
+            elif np.isnan(sample_weights).sum() > 0:
                 raise ValueError("sample_weights contains NaN values.")
-            self.sample_weights_ = sample_weights.reindex(index=X.index)
+            self.sample_weights_ = sample_weights
         else:
-            self.sample_weights_ = pd.Series(
-                np.ones(X.shape[0]), index=X.index, name="sample_weights"
-            )
+            self.sample_weights_ = np.ones(X.shape[0])
 
         X_arr = X.values.astype(float)
         p = np.asarray(purity, float).ravel()
@@ -56,7 +54,7 @@ class Monte:
         p_mean = p.mean()
         Xc = X_arr - X_mean
         pc = p - p_mean
-
+        
         # coef_
         denom = (self.sample_weights_ * pc) @ pc + self.lam  # scalar
         coef_ = (Xc.T @ (self.sample_weights_ * pc)) / max(denom, self.eps)  # (m,)
@@ -200,7 +198,7 @@ class Monte:
         return obj
 
     @staticmethod
-    def _calc_sample_weights(additional_meta: pd.DataFrame) -> pd.Series:
+    def _calc_sample_weights(additional_meta: pd.DataFrame) -> np.ndarray:
 
         score_cols = ["ABSOLUTE", "ESTIMATE", "LUMP", "IHC"]
 
@@ -242,9 +240,7 @@ class Monte:
             return max(0.0, min(1.0, w))
 
         weights = scores.apply(compute_weight, axis=1)
-        weights.name = "sample_weight"
-
-        return weights
+        return weights.values
 
     @staticmethod
     def _estimate_prior_params(s2: np.ndarray) -> Tuple:
