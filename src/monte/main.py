@@ -188,44 +188,51 @@ class Monte:
         if not self.is_fitted:
             raise ValueError("Model has not been fitted yet. Fit before purifying.")
 
+        # check overlap between input and model probes
+        overlap_probes = list(set(X.columns).intersection(set(self.probe_ids)))
+        overlap_p_adj = self.p_adj.reindex(index=overlap_probes)
+        if len(overlap_probes) == 0:
+            raise ValueError(
+                "No overlapping probes between input X and model probes."
+            )
+        elif len(overlap_probes) < len(self.probe_ids):
+            print(
+                f"Warning: Only {len(overlap_probes)} out of {len(self.probe_ids)} model probes are present in X."
+            )
+        
         # Determine which probes to use based on significance threshold
         selected_probes = None
         if significance_threshold is None:
-            selected_probes = self.probe_ids
+            selected_probes = overlap_probes
         else:
             if significance_threshold < 0 or significance_threshold > 1:
                 raise ValueError("significance_threshold must be in [0, 1]")
-            selected_probes = self.p_adj[
-                self.p_adj <= significance_threshold
+            selected_probes = overlap_p_adj[
+                overlap_p_adj <= significance_threshold
             ].index.to_list()
+            print(
+                f"Adjusting {len(selected_probes)} probes passing significance threshold of {significance_threshold}."
+            )
         if len(selected_probes) == 0:
             raise ValueError(
                 "No probes pass the significance threshold for purification."
             )
 
-        # check overlap
-        overlap_probes = list(set(selected_probes).intersection(set(X.columns)))
-        if len(overlap_probes) == 0:
-            raise ValueError(
-                "No overlapping probes between selected_probes and X.columns."
-            )
-        elif len(overlap_probes) < len(selected_probes):
-            print(
-                f"Warning: Only {len(overlap_probes)} out of {len(selected_probes)} selected probes are present in X. The order of probes may differ and some probes will be ignored."
-            )
-        else:
-            overlap_probes = selected_probes  # preserve order
-
         # prepare data
-        X_arr = X.reindex(columns=overlap_probes).values.astype(float)
+        X_arr = X.reindex(columns=selected_probes).values.astype(float)
 
         # predict purity
         p_pred = np.asarray(self.predict_purity(X))
         delta_p = 1 - p_pred
-        coef_ = np.asarray(self.coef_.reindex(index=overlap_probes))
+        coef_ = np.asarray(self.coef_.reindex(index=selected_probes))
         X_arr += delta_p[:, None] @ coef_[None, :]
-        X[overlap_probes] = X_arr
-        return X
+
+        # combine adjusted and unadjusted probes
+        unadjusted_probes = list(set(overlap_probes) - set(selected_probes))
+        unadjusted_X = X.reindex(columns=unadjusted_probes)
+        adjusted_X = pd.DataFrame(X_arr, columns=selected_probes, index=X.index)
+
+        return pd.concat([adjusted_X, unadjusted_X], axis=1).reindex(columns=X.columns)
 
     def get_probe_stats(self) -> pd.DataFrame:
         """Returns a DataFrame of probe statistics computed during fitting."""
