@@ -44,7 +44,6 @@ class Monte:
             self.sample_weights_ = sample_weights
         else:
             self.sample_weights_ = np.ones(X.shape[0])
-
         X_arr = X.values.astype(float)
         p = np.asarray(purity, float).ravel()
         n, _ = X_arr.shape
@@ -54,11 +53,14 @@ class Monte:
         p_mean = p.mean()
         Xc = X_arr - X_mean
         pc = p - p_mean
-        
+
         # coef_
         denom = (self.sample_weights_ * pc) @ pc + self.lam  # scalar
         coef_ = (Xc.T @ (self.sample_weights_ * pc)) / max(denom, self.eps)  # (m,)
 
+        if np.isnan(coef_).sum() > 0:
+            raise RuntimeError("NaN values encountered in coefficient estimates.")
+        
         #  intercept_
         intercept_ = X_mean - coef_ * p_mean  # (m,)
 
@@ -163,6 +165,7 @@ class Monte:
             np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity"
         )
     
+    # TODO: add option to select probes used for purification
     def purify_values(self, X: pd.DataFrame) -> pd.DataFrame:
         """
         Pure tumor reconstruction from the linear mix: T = intercept_ + (X - intercept_)/p.
@@ -240,7 +243,7 @@ class Monte:
             return max(0.0, min(1.0, w))
 
         weights = scores.apply(compute_weight, axis=1)
-        return weights.values
+        return np.asarray(weights)
 
     @staticmethod
     def _estimate_prior_params(s2: np.ndarray) -> Tuple:
