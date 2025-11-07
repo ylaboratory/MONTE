@@ -6,10 +6,13 @@ from itertools import combinations
 from typing import List, Tuple, Optional
 from statsmodels.stats.multitest import multipletests
 
+
 class Monte:
-    def __init__(self, lam: float = 1e-6, confidence_level: float = 0.95, eps: float = 1e-10):
+    def __init__(
+        self, lam: float = 1e-6, significance_level: float = 0.95, eps: float = 1e-10
+    ):
         self.lam = lam
-        self.confidence_level = confidence_level
+        self.significance_level = significance_level
         self.eps = eps
         self.is_fitted: bool = False
         self.coef_: pd.Series = pd.Series()  # (m,) tumor direction
@@ -60,7 +63,7 @@ class Monte:
 
         if np.isnan(coef_).sum() > 0:
             raise RuntimeError("NaN values encountered in coefficient estimates.")
-        
+
         #  intercept_
         intercept_ = X_mean - coef_ * p_mean  # (m,)
 
@@ -79,11 +82,12 @@ class Monte:
 
         # moderated t-statistics
         vbeta = 1.0 / ((self.sample_weights_ * pc) @ pc + self.lam)
+        t_raw = coef_ / np.sqrt(sig2 * vbeta)
         t_moderated = coef_ / np.sqrt(sig2_post * vbeta)
         df_total = d0 + dof
 
         # confidence intervals
-        alpha = 1 - self.confidence_level
+        alpha = 1 - self.significance_level
         t_crit = t.ppf(1 - alpha / 2, df_total)
         margin_of_error = t_crit * np.sqrt(sig2_post * vbeta)
         upper_CI = coef_ + margin_of_error
@@ -100,6 +104,7 @@ class Monte:
         self.intercept_ = pd.Series(intercept_, index=X.columns, name="intercept_")
         self.coef_ = pd.Series(coef_, index=X.columns, name="coef_")
         self.w_ = pd.Series(w, index=X.columns, name="weight")
+        self.t_raw = pd.Series(t_raw, index=X.columns, name="t_raw")
         self.t_moderated = pd.Series(t_moderated, index=X.columns, name="t_moderated")
         self.df_total = df_total
         self.pvals = pd.Series(pvals, index=X.columns, name="p_value")
@@ -121,6 +126,7 @@ class Monte:
                 "upper_CI": upper_CI,
                 "lower_CI": lower_CI,
                 "weight": w,
+                "t_raw": t_raw,
                 "t_moderated": t_moderated,
                 "p_value": pvals,
                 "p_adj": p_adj,
@@ -142,8 +148,9 @@ class Monte:
         if top_n is not None:
             selected_probes = self.t_moderated.abs().nlargest(top_n).index.to_list()
         elif self.best_top_n is not None:
-            selected_probes = self.t_moderated.abs().nlargest(self.best_top_n).index.to_list()
-            print(f"Using best_top_n={self.best_top_n} for prediction.")
+            selected_probes = (
+                self.t_moderated.abs().nlargest(self.best_top_n).index.to_list()
+            )
 
         X_arr = X.reindex(columns=selected_probes).values.astype(float)
 
@@ -152,7 +159,9 @@ class Monte:
         obs = np.isfinite(X_arr)
 
         # center by training mean
-        Xc = X_arr - self.probe_mean.reindex(index=selected_probes).values  # store self.X_mean in fit()
+        Xc = (
+            X_arr - self.probe_mean.reindex(index=selected_probes).values
+        )  # store self.X_mean in fit()
 
         # weighted projection onto coef
         numerator = np.nansum(obs * w * Xc * coef, axis=1)
@@ -164,9 +173,10 @@ class Monte:
         return pd.Series(
             np.clip(p_hat, 0.0, 1.0), index=X.index, name="predicted_purity"
         )
-    
-    # TODO: add option to select probes used for purification
-    def purify_values(self, X: pd.DataFrame) -> pd.DataFrame:
+
+    def purify_values(
+        self, X: pd.DataFrame, significance_threshold: Optional[float] = None
+    ) -> pd.DataFrame:
         """
         Pure tumor reconstruction from the linear mix: T = intercept_ + (X - intercept_)/p.
         """
@@ -177,14 +187,51 @@ class Monte:
             )
         if not self.is_fitted:
             raise ValueError("Model has not been fitted yet. Fit before purifying.")
-        X_arr = X.reindex(columns=self.probe_ids).values.astype(float)
+
+        # Determine which probes to use based on significance threshold
+        selected_probes = None
+        if significance_threshold is None:
+            selected_probes = self.probe_ids
+        else:
+            if significance_threshold < 0 or significance_threshold > 1:
+                raise ValueError("significance_threshold must be in [0, 1]")
+            selected_probes = self.p_adj[
+                self.p_adj <= significance_threshold
+            ].index.to_list()
+        if len(selected_probes) == 0:
+            raise ValueError(
+                "No probes pass the significance threshold for purification."
+            )
+
+        # check overlap
+        overlap_probes = list(set(selected_probes).intersection(set(X.columns)))
+        if len(overlap_probes) == 0:
+            raise ValueError(
+                "No overlapping probes between selected_probes and X.columns."
+            )
+        elif len(overlap_probes) < len(selected_probes):
+            print(
+                f"Warning: Only {len(overlap_probes)} out of {len(selected_probes)} selected probes are present in X. The order of probes may differ and some probes will be ignored."
+            )
+        else:
+            overlap_probes = selected_probes  # preserve order
+
+        # prepare data
+        X_arr = X.reindex(columns=overlap_probes).values.astype(float)
 
         # predict purity
         p_pred = np.asarray(self.predict_purity(X))
         delta_p = 1 - p_pred
-        coef_ = np.asarray(self.coef_)
+        coef_ = np.asarray(self.coef_.reindex(index=overlap_probes))
         X_arr += delta_p[:, None] @ coef_[None, :]
-        return pd.DataFrame(X_arr, index=X.index, columns=self.probe_ids)
+        X[overlap_probes] = X_arr
+        return X
+
+    def get_probe_stats(self) -> pd.DataFrame:
+        """Returns a DataFrame of probe statistics computed during fitting."""
+        if not self.is_fitted:
+            raise ValueError("Model has not been fitted yet. Fit before getting stats.")
+        return self.df_stats.copy()
 
     def save(self, filepath: str):
         """Save the entire model into a single binary file."""
@@ -202,7 +249,6 @@ class Monte:
 
     @staticmethod
     def _calc_sample_weights(additional_meta: pd.DataFrame) -> np.ndarray:
-
         score_cols = ["ABSOLUTE", "ESTIMATE", "LUMP", "IHC"]
 
         available_cols = [col for col in score_cols if col in additional_meta.columns]
@@ -219,7 +265,7 @@ class Monte:
 
         # Parameters controlling penalty for few raters and disagreement
         alpha = 0.5  # penalty for number of available scores
-        beta = 1.0   # shape parameter for agreement strength
+        beta = 1.0  # shape parameter for agreement strength
         min_raters = 2
 
         def compute_weight(row):
@@ -236,9 +282,9 @@ class Monte:
                 mean_abs_diff = np.mean(diffs)
 
             # Agreement and weight adjustment
-            agreement = 1.0 - mean_abs_diff               # [0,1], higher = more consistent
+            agreement = 1.0 - mean_abs_diff  # [0,1], higher = more consistent
             rater_factor = (n / len(available_cols)) ** alpha
-            w = (agreement ** beta) * rater_factor
+            w = (agreement**beta) * rater_factor
 
             return max(0.0, min(1.0, w))
 
