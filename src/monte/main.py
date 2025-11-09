@@ -175,7 +175,7 @@ class Monte:
         )
 
     def purify_values(
-        self, X: pd.DataFrame, significance_threshold: Optional[float] = None
+        self, X: pd.DataFrame, target_purity: float = 1.0, significance_threshold: Optional[float] = None
     ) -> pd.DataFrame:
         """
         Pure tumor reconstruction from the linear mix: T = intercept_ + (X - intercept_)/p.
@@ -185,6 +185,10 @@ class Monte:
             raise ValueError(
                 "X must be a pandas DataFrame (samples, probes / subset of probes)"
             )
+        
+        if target_purity < 0.0 or target_purity > 1.0:
+            raise ValueError("target_purity must be in [0, 1]")
+
         if not self.is_fitted:
             raise ValueError("Model has not been fitted yet. Fit before purifying.")
 
@@ -223,7 +227,7 @@ class Monte:
 
         # predict purity
         p_pred = np.asarray(self.predict_purity(X))
-        delta_p = 1 - p_pred
+        delta_p = target_purity - p_pred
         coef_ = np.asarray(self.coef_.reindex(index=selected_probes))
         X_arr += delta_p[:, None] @ coef_[None, :]
 

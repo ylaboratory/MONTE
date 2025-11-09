@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Optional
+from typing import Optional, List
 from monte.main import Monte
 from sklearn.model_selection import KFold
 
@@ -9,6 +9,7 @@ def train_with_cv(
     X: pd.DataFrame,
     purity: pd.Series,
     sample_weights: Optional[np.ndarray] = None,
+    top_n_candidates: Optional[List[int]] = None,
     n_splits: int = 5,
     lam: float = 1e-6,
     significance_level: float = 0.95,
@@ -40,6 +41,17 @@ def train_with_cv(
         100_000,
         150_000,
     ]
+
+    if top_n_candidates is not None and len(top_n_candidates) > 0:
+        for n in top_n_candidates:
+            if isinstance(n, int) and n > 0 and n not in base_candidates:
+                base_candidates.append(n)
+            else:
+                raise ValueError(
+                    "top_n_candidates must be a list of positive integers."
+                )
+    base_candidates = sorted(base_candidates)
+
     n_probes = X.shape[1]
     max_top_n = min(base_candidates[-1], n_probes)
 
