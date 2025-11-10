@@ -225,6 +225,10 @@ class Monte:
         # prepare data
         X_arr = X.reindex(columns=selected_probes).values.astype(float)
 
+        need_clip = False
+        if min(X_arr.flatten()) >= 0.0 and max(X_arr.flatten()) <= 1.0:
+            need_clip = True
+
         # predict purity
         p_pred = np.asarray(self.predict_purity(X))
         delta_p = target_purity - p_pred
@@ -236,6 +240,8 @@ class Monte:
         unadjusted_X = X.reindex(columns=unadjusted_probes)
         adjusted_X = pd.DataFrame(X_arr, columns=selected_probes, index=X.index)
 
+        if need_clip:
+            adjusted_X = adjusted_X.clip(0.0, 1.0)
         return pd.concat([adjusted_X, unadjusted_X], axis=1).reindex(columns=X.columns)
 
     def get_probe_stats(self) -> pd.DataFrame:
