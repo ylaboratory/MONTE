@@ -9,9 +9,8 @@ from statsmodels.stats.multitest import multipletests
 
 class Monte:
     def __init__(
-        self, lam: float = 1e-6, significance_level: float = 0.95, eps: float = 1e-10
+        self, significance_level: float = 0.95, eps: float = 1e-10
     ):
-        self.lam = lam
         self.significance_level = significance_level
         self.eps = eps
         self.is_fitted: bool = False
@@ -27,7 +26,6 @@ class Monte:
         self,
         X: pd.DataFrame,
         purity: pd.Series,
-        sample_weights: Optional[np.ndarray] = None,
     ) -> "Monte":
         """
         X   : n x m methylation (rows=samples, cols=probes)
@@ -39,14 +37,7 @@ class Monte:
         if not isinstance(purity, pd.Series):
             raise ValueError("purity must be a pandas Series (samples,)")
 
-        if sample_weights is not None:
-            if not isinstance(sample_weights, np.ndarray):
-                raise ValueError("sample_weights must be a np.ndarray (samples,)")
-            elif np.isnan(sample_weights).sum() > 0:
-                raise ValueError("sample_weights contains NaN values.")
-            self.sample_weights_ = sample_weights
-        else:
-            self.sample_weights_ = np.ones(X.shape[0])
+        
         X_arr = X.values.astype(float)
         p = np.asarray(purity, float).ravel()
         n, _ = X_arr.shape
@@ -58,8 +49,8 @@ class Monte:
         pc = p - p_mean
 
         # coef_
-        denom = (self.sample_weights_ * pc) @ pc + self.lam  # scalar
-        coef_ = (Xc.T @ (self.sample_weights_ * pc)) / max(denom, self.eps)  # (m,)
+        denom = pc @ pc
+        coef_ = (Xc.T @  pc) / max(denom, self.eps)  # (m,)
 
         if np.isnan(coef_).sum() > 0:
             raise RuntimeError("NaN values encountered in coefficient estimates.")
@@ -81,7 +72,7 @@ class Monte:
         sig2_post = (d0 * s0 + dof * sig2) / (d0 + dof)
 
         # moderated t-statistics
-        vbeta = 1.0 / ((self.sample_weights_ * pc) @ pc + self.lam)
+        vbeta = 1.0 / (pc @ pc)
         t_raw = coef_ / np.sqrt(sig2 * vbeta)
         t_moderated = coef_ / np.sqrt(sig2_post * vbeta)
         df_total = d0 + dof
