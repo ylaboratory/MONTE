@@ -5,6 +5,7 @@ from scipy.stats import t
 from itertools import combinations
 from typing import List, Tuple, Optional
 from statsmodels.stats.multitest import multipletests
+from scipy.stats import norm
 
 
 class Monte:
@@ -266,3 +267,113 @@ class Monte:
         d0 = max(2.0 / var_log, 1.0)
         s0 = np.exp(mean_log - digamma(d0 / 2) + np.log(d0 / 2))
         return s0, d0
+
+
+    def fine_tuning(
+        self,
+        X: pd.DataFrame,
+        purity: pd.Series,
+        tau2: float = 0.1,
+        top_n: Optional[int] = None
+    ) -> "Monte":
+
+        if not self.is_fitted:
+            raise ValueError("Base model must be fitted before fine-tuning")
+        
+        if not isinstance(X, pd.DataFrame) or not isinstance(purity, pd.Series):
+            raise ValueError("X must be DataFrame, purity must be Series")
+
+        # --- 1. Select probes ---
+        # Find overlapping probes between the model and the new data
+        overlap_probes = X.columns.intersection(self.coef_.index)
+        if len(overlap_probes) != len(X.columns) or len(overlap_probes) != len(self.coef_.index):
+            print(
+                f"Warning: Found {len(overlap_probes)} overlapping probes. Fine-tuning will proceed with only these probes."
+            )
+
+        # If top_n is specified, select the n-probes with the largest t-statistic from the overlap
+        if top_n is not None:
+            if top_n > len(overlap_probes):
+                print(f"Warning: top_n ({top_n}) is larger than the number of overlapping probes ({len(overlap_probes)}). Using all overlapping probes.")
+            selected_probes = self.t_moderated.reindex(overlap_probes).abs().nlargest(top_n).index
+        else:
+            selected_probes = overlap_probes
+        
+        if len(selected_probes) == 0:
+            raise ValueError("No overlapping probes to fine-tune.")
+
+        # --- 2. Prepare new data ---
+        X_arr = X[selected_probes].values.astype(float)
+        p_arr = purity.values.astype(float).ravel()
+        n_new, m_new = X_arr.shape
+
+        # Center new data
+        X_mean_new = X_arr.mean(axis=0)
+        p_mean_new = p_arr.mean()
+        Xc_new = X_arr - X_mean_new
+        pc_new = p_arr - p_mean_new
+        pc_new_ss = pc_new @ pc_new
+        if pc_new_ss < self.eps:
+            raise ValueError("Variance of new purity data is close to zero. Cannot fine-tune.")
+
+        # --- 3. Bayesian Update (vectorized) ---
+        # Prior from original fit
+        beta_prior = self.coef_.reindex(selected_probes).values
+        prior_prec = 1.0 / tau2  # Prior precision
+
+        # Likelihood from new data
+        beta_hat_new = (Xc_new.T @ pc_new) / pc_new_ss  # OLS coefficients from new data
+        
+        # Residual variance from new data
+        resid_new = Xc_new - np.outer(pc_new, beta_hat_new)
+        dof_new = max(n_new - 2, 1)
+        sigma2_new = (resid_new**2).sum(axis=0) / dof_new
+        
+        # Precision of likelihood from new data
+        likelihood_prec = pc_new_ss / (sigma2_new + self.eps)
+
+        # Posterior calculation
+        post_prec = prior_prec + likelihood_prec
+        post_var = 1.0 / post_prec
+        post_mean_beta = post_var * (prior_prec * beta_prior + likelihood_prec * beta_hat_new)
+
+        # --- 4. Update Intercept and Other Stats ---
+        post_mean_intercept = X_mean_new - post_mean_beta * p_mean_new
+        
+        # Credible intervals for the new coefficients
+        se_beta = np.sqrt(post_var)
+        z_crit = norm.ppf(1 - (1 - self.significance_level) / 2)
+        ci_lower = post_mean_beta - z_crit * se_beta
+        ci_upper = post_mean_beta + z_crit * se_beta
+
+        # --- 5. Store Results ---
+        self.coef_ = pd.Series(post_mean_beta, index=selected_probes, name="coef_")
+        self.intercept_ = pd.Series(post_mean_intercept, index=selected_probes, name="intercept_")
+        
+        # Update df_stats with fine-tuning results
+        self.df_stats = pd.DataFrame({
+            "coef_prior": self.coef_.reindex(selected_probes),
+            "coef_": post_mean_beta,
+            "intercept_": post_mean_intercept,
+            "lower_CI": ci_lower,
+            "upper_CI": ci_upper,
+            "posterior_se": se_beta
+        }, index=selected_probes)
+        
+        # Update other model attributes to reflect the fine-tuned state
+        self.probe_ids = list(selected_probes)
+        
+        # Update means
+        self.purity_mean = p_mean_new
+        self.probe_mean = pd.Series(X_mean_new, index=selected_probes, name="probe_mean")
+
+        # Update weights and t-statistics
+        self.w_ = pd.Series((post_mean_beta**2) / (post_var + self.eps), index=selected_probes, name="weight")
+        self.t_moderated = pd.Series(post_mean_beta / (se_beta + self.eps), index=selected_probes, name="t_moderated")
+
+        # Clear stats that are no longer valid
+        self.t_raw = pd.Series(dtype='float64')
+        self.pvals = pd.Series(dtype='float64')
+        self.p_adj = pd.Series(dtype='float64')
+
+        return self
