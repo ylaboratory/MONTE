@@ -15,6 +15,7 @@ class Monte:
         self.significance_level = significance_level
         self.eps = eps
         self.is_fitted: bool = False
+        self.is_fine_tuned: bool = False
         self.coef_: pd.Series = pd.Series()  # (m,) tumor direction
         self.intercept_: pd.Series = pd.Series()  # (m,) baseline
         self.w_: pd.Series = pd.Series()  # (m,) probe weights (inverse noise)
@@ -335,7 +336,7 @@ class Monte:
         # Posterior calculation
         post_prec = prior_prec + likelihood_prec
         post_var = 1.0 / post_prec
-        post_mean_beta = post_var * (prior_prec * beta_prior + likelihood_prec * beta_hat_new)
+        post_mean_beta = post_var * (prior_prec * beta_prior + likelihood_prec * beta_hat_new) # type: ignore
 
         # --- 4. Update Intercept and Other Stats ---
         post_mean_intercept = X_mean_new - post_mean_beta * p_mean_new
@@ -375,5 +376,70 @@ class Monte:
         self.t_raw = pd.Series(dtype='float64')
         self.pvals = pd.Series(dtype='float64')
         self.p_adj = pd.Series(dtype='float64')
+        self.is_fine_tuned = True
 
         return self
+    
+    def predict_purity_with_ci(
+        self,
+        X: pd.DataFrame,
+        top_n: Optional[int] = None,
+        n_simulations: int = 200,
+        siginificance_level: float = 0.05,
+    ) -> pd.DataFrame:
+        """
+        Predicts purity with a confidence interval using a Monte Carlo simulation.
+        This method is intended to be used after fine_tuning, as it relies on the
+        posterior standard error of the coefficients.
+        """
+        if "posterior_se" not in self.df_stats.columns:
+            raise ValueError(
+                "The model has not been fine-tuned. "
+                "Run fine_tuning() before calling this method to get confidence intervals."
+            )
+
+        if not self.is_fine_tuned:
+            raise ValueError("Model has not been fine-tuned. Run fine_tuning() before predicting purity with confidence intervals.")
+
+        selected_probes = self.probe_ids
+        if top_n is not None:
+            selected_probes = self.t_moderated.abs().nlargest(top_n).index.to_list()
+
+        # --- Prepare data and model parameters ---
+        X_arr = X.reindex(columns=selected_probes).values.astype(float)
+        obs = np.isfinite(X_arr)
+        Xc = X_arr - self.probe_mean.reindex(index=selected_probes).values
+
+        coef_mean = self.coef_.reindex(index=selected_probes).values
+        coef_se = self.df_stats["posterior_se"].reindex(index=selected_probes).values
+        w = self.w_.reindex(index=selected_probes).values
+
+        # --- Monte Carlo Simulation ---
+        purity_simulations = np.zeros((X.shape[0], n_simulations))
+
+        for i in range(n_simulations):
+            # Sample coefficients from their posterior distribution
+            coef_sample = np.random.normal(loc=coef_mean, scale=coef_se) # type: ignore
+
+            # Predict purity with the sampled coefficients
+            numerator = np.nansum(obs * w * Xc * coef_sample, axis=1)
+            denominator = np.nansum(obs * w * (coef_sample * coef_sample), axis=1) + self.eps
+            p_hat_sample = numerator / denominator + self.purity_mean
+            purity_simulations[:, i] = p_hat_sample
+
+        # --- Calculate results ---
+        p_hat_mean = np.mean(purity_simulations, axis=1)
+
+        alpha = siginificance_level
+        lower_bound = np.percentile(purity_simulations, alpha / 2 * 100, axis=1)
+        upper_bound = np.percentile(purity_simulations, (1 - alpha / 2) * 100, axis=1)
+
+        results = pd.DataFrame(
+            {
+                "predicted_purity": np.clip(p_hat_mean, 0.0, 1.0),
+                "ci_lower": np.clip(lower_bound, 0.0, 1.0),
+                "ci_upper": np.clip(upper_bound, 0.0, 1.0),
+            },
+            index=X.index,
+        )
+        return results
