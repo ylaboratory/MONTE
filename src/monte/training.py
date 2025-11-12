@@ -8,19 +8,11 @@ from sklearn.model_selection import KFold
 def train_with_cv(
     X: pd.DataFrame,
     purity: pd.Series,
-    sample_weights: Optional[np.ndarray] = None,
     top_n_candidates: Optional[List[int]] = None,
     n_splits: int = 5,
     alpha: float = 0.05,
     eps: float = 1e-10,
 ) -> "Monte":
-    # set sample weights
-    if sample_weights is not None:
-        if not isinstance(sample_weights, np.ndarray):
-            raise ValueError("sample_weights must be a numpy ndarray (samples,)")
-        sample_weights = sample_weights.astype(float)
-    else:
-        sample_weights = np.ones(X.shape[0], dtype=float)
 
     # top_n candidates
     base_candidates = [
@@ -64,7 +56,6 @@ def train_with_cv(
     for train_idx, test_idx in kf.split(X):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = purity.iloc[train_idx], purity.iloc[test_idx]
-        sample_weights_train = sample_weights[train_idx]
 
         model = Monte(alpha=alpha, eps=eps)
         model.fit(X_train, y_train)
