@@ -270,11 +270,11 @@ class Monte:
         return s0, d0
 
 
-    def fine_tuning(
+    def fine_tune(
         self,
         X: pd.DataFrame,
         purity: pd.Series,
-        tau2: float = 0.1,
+        tau2: float = 1,
         top_n: Optional[int] = None
     ) -> "Monte":
 
