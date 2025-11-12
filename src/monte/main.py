@@ -10,9 +10,9 @@ from scipy.stats import norm
 
 class Monte:
     def __init__(
-        self, significance_level: float = 0.95, eps: float = 1e-10
+        self, alpha: float = 0.05, eps: float = 1e-10
     ):
-        self.significance_level = significance_level
+        self.alpha = alpha
         self.eps = eps
         self.is_fitted: bool = False
         self.is_fine_tuned: bool = False
@@ -80,7 +80,7 @@ class Monte:
         df_total = d0 + dof
 
         # confidence intervals
-        alpha = 1 - self.significance_level
+        alpha = self.alpha
         t_crit = t.ppf(1 - alpha / 2, df_total)
         margin_of_error = t_crit * np.sqrt(sig2_post * vbeta)
         upper_CI = coef_ + margin_of_error
@@ -168,7 +168,7 @@ class Monte:
         )
 
     def purify_values(
-        self, X: pd.DataFrame, target_purity: float = 1.0, significance_threshold: Optional[float] = None
+        self, X: pd.DataFrame, target_purity: float = 1.0, alpha: Optional[float] = None
     ) -> pd.DataFrame:
         """
         Pure tumor reconstruction from the linear mix: T = intercept_ + (X - intercept_)/p.
@@ -199,16 +199,16 @@ class Monte:
         
         # Determine which probes to use based on significance threshold
         selected_probes = None
-        if significance_threshold is None:
+        if alpha is None:
             selected_probes = overlap_probes
         else:
-            if significance_threshold < 0 or significance_threshold > 1:
-                raise ValueError("significance_threshold must be in [0, 1]")
+            if alpha < 0 or alpha > 1:
+                raise ValueError("alpha must be in [0, 1]")
             selected_probes = overlap_p_adj[
-                overlap_p_adj <= significance_threshold
+                overlap_p_adj <= alpha
             ].index.to_list()
             print(
-                f"Adjusting {len(selected_probes)} probes passing significance threshold of {significance_threshold}."
+                f"Adjusting {len(selected_probes)} probes passing significance threshold of {alpha}."
             )
         if len(selected_probes) == 0:
             raise ValueError(
@@ -343,7 +343,7 @@ class Monte:
         
         # Credible intervals for the new coefficients
         se_beta = np.sqrt(post_var)
-        z_crit = norm.ppf(1 - (1 - self.significance_level) / 2)
+        z_crit = norm.ppf(1 - self.alpha / 2)
         ci_lower = post_mean_beta - z_crit * se_beta
         ci_upper = post_mean_beta + z_crit * se_beta
 
@@ -385,7 +385,7 @@ class Monte:
         X: pd.DataFrame,
         top_n: Optional[int] = None,
         n_simulations: int = 200,
-        siginificance_level: float = 0.05,
+        alpha: float = 0.05,
     ) -> pd.DataFrame:
         """
         Predicts purity with a confidence interval using a Monte Carlo simulation.
@@ -404,6 +404,10 @@ class Monte:
         selected_probes = self.probe_ids
         if top_n is not None:
             selected_probes = self.t_moderated.abs().nlargest(top_n).index.to_list()
+        elif self.best_top_n is not None:
+            selected_probes = (
+                self.t_moderated.abs().nlargest(self.best_top_n).index.to_list()
+            )
 
         # --- Prepare data and model parameters ---
         X_arr = X.reindex(columns=selected_probes).values.astype(float)
@@ -430,7 +434,7 @@ class Monte:
         # --- Calculate results ---
         p_hat_mean = np.mean(purity_simulations, axis=1)
 
-        alpha = siginificance_level
+        alpha = alpha
         lower_bound = np.percentile(purity_simulations, alpha / 2 * 100, axis=1)
         upper_bound = np.percentile(purity_simulations, (1 - alpha / 2) * 100, axis=1)
 

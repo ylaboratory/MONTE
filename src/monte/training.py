@@ -11,8 +11,7 @@ def train_with_cv(
     sample_weights: Optional[np.ndarray] = None,
     top_n_candidates: Optional[List[int]] = None,
     n_splits: int = 5,
-    lam: float = 1e-6,
-    significance_level: float = 0.95,
+    alpha: float = 0.05,
     eps: float = 1e-10,
 ) -> "Monte":
     # set sample weights
@@ -67,8 +66,8 @@ def train_with_cv(
         y_train, y_test = purity.iloc[train_idx], purity.iloc[test_idx]
         sample_weights_train = sample_weights[train_idx]
 
-        model = Monte(lam=lam, significance_level=significance_level, eps=eps)
-        model.fit(X_train, y_train, sample_weights=sample_weights_train)
+        model = Monte(alpha=alpha, eps=eps)
+        model.fit(X_train, y_train)
 
         for top_n in top_n_candidates:
             preds = model.predict_purity(X_test, top_n=top_n)
@@ -78,8 +77,8 @@ def train_with_cv(
     mean_mse = {k: np.mean(v) for k, v in mse_results.items()}
     best_top_n = min(mean_mse, key=lambda k: mean_mse[k])
 
-    final_model = Monte(lam=lam, significance_level=significance_level, eps=eps)
-    final_model.fit(X, purity, sample_weights=sample_weights)
+    final_model = Monte(alpha=alpha, eps=eps)
+    final_model.fit(X, purity)
     final_model.best_top_n = best_top_n
     final_model.cv_results_ = mean_mse
 
