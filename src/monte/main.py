@@ -347,10 +347,6 @@ class Monte:
         ci_lower = post_mean_beta - z_crit * se_beta
         ci_upper = post_mean_beta + z_crit * se_beta
 
-        # --- 5. Store Results ---
-        self.coef_ = pd.Series(post_mean_beta, index=selected_probes, name="coef_")
-        self.intercept_ = pd.Series(post_mean_intercept, index=selected_probes, name="intercept_")
-        
         # Update df_stats with fine-tuning results
         self.df_stats = pd.DataFrame({
             "coef_prior": self.coef_.reindex(selected_probes),
@@ -361,6 +357,10 @@ class Monte:
             "posterior_se": se_beta
         }, index=selected_probes)
         
+        # --- 5. Store Results ---
+        self.coef_ = pd.Series(post_mean_beta, index=selected_probes, name="coef_")
+        self.intercept_ = pd.Series(post_mean_intercept, index=selected_probes, name="intercept_")
+
         # Update other model attributes to reflect the fine-tuned state
         self.probe_ids = list(selected_probes)
         

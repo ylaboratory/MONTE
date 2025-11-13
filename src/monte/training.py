@@ -83,7 +83,6 @@ def fine_tune_with_cv(
     alpha: float = 0.05,
     eps: float = 1e-10,
     n_splits: int = 5,
-    top_n: int = 1000,
 ) -> "Monte":
     
     if not isinstance(model, Monte):
@@ -91,7 +90,7 @@ def fine_tune_with_cv(
     
     tau2_grids = tau2_grids
     if tau2_grids is None:
-        tau2_grids = [0.01, 0.1, 1.0, 10, 100, 1000]
+        tau2_grids = [1e-2, 1e-1, 1e+0, 1e+1, 1e+2]
 
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
     mse_results = {tau2: [] for tau2 in tau2_grids}
