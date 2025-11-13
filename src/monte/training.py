@@ -91,7 +91,7 @@ def fine_tune_with_cv(
     
     tau2_grids = tau2_grids
     if tau2_grids is None:
-        tau2_grids = [0.01, 0.1, 1.0, 10]
+        tau2_grids = [0.01, 0.1, 1.0, 10, 100, 1000]
 
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
     mse_results = {tau2: [] for tau2 in tau2_grids}
