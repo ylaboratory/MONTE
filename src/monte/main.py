@@ -317,67 +317,94 @@ class Monte:
         if pc_new_ss < self.eps:
             raise ValueError("Variance of new purity data is close to zero. Cannot fine-tune.")
 
-        # --- 3. Bayesian Update (vectorized) ---
+        # --- 3. Bayesian Update for Coefficients ---
         # Prior from original fit
         beta_prior = self.coef_.reindex(selected_probes).values
-        prior_prec = 1.0 / tau2  # Prior precision
+        prior_prec = 1.0 / tau2
 
-        # Likelihood from new data
-        beta_hat_new = (Xc_new.T @ pc_new) / pc_new_ss  # OLS coefficients from new data
+        # Likelihood from new data (using OLS estimate)
+        beta_hat_new = (Xc_new.T @ pc_new) / pc_new_ss
         
-        # Residual variance from new data
-        resid_new = Xc_new - np.outer(pc_new, beta_hat_new)
+        # Initial residual variance from new data
+        resid_ols = Xc_new - np.outer(pc_new, beta_hat_new)
         dof_new = max(n_new - 2, 1)
-        sigma2_new = (resid_new**2).sum(axis=0) / dof_new
+        sigma2_new_ols = (resid_ols**2).sum(axis=0) / dof_new
         
-        # Precision of likelihood from new data
-        likelihood_prec = pc_new_ss / (sigma2_new + self.eps)
+        # Precision of likelihood
+        likelihood_prec = pc_new_ss / (sigma2_new_ols + self.eps)
 
-        # Posterior calculation
+        # Posterior calculation for coefficients
         post_prec = prior_prec + likelihood_prec
         post_var = 1.0 / post_prec
-        post_mean_beta = post_var * (prior_prec * beta_prior + likelihood_prec * beta_hat_new) # type: ignore
+        post_mean_beta = post_var * (prior_prec * beta_prior + likelihood_prec * beta_hat_new) #type: ignore
 
-        # --- 4. Update Intercept and Other Stats ---
+        # --- 4. Limma-style Variance Moderation ---
         post_mean_intercept = X_mean_new - post_mean_beta * p_mean_new
         
-        # Credible intervals for the new coefficients
-        se_beta = np.sqrt(post_var)
-        z_crit = norm.ppf(1 - self.alpha / 2)
-        ci_lower = post_mean_beta - z_crit * se_beta
-        ci_upper = post_mean_beta + z_crit * se_beta
+        # Residuals and variance using the posterior coefficients
+        fitted_new = post_mean_intercept[None, :] + np.outer(p_arr, post_mean_beta)
+        resid_new = X_arr - fitted_new
+        sigma2_new = (resid_new**2).sum(axis=0) / dof_new
 
-        # Update df_stats with fine-tuning results
+        # Estimate prior variance parameters from new data (limma-style)
+        s0_new, d0_new = self._estimate_prior_params(sigma2_new)
+        
+        # Calculate moderated posterior variance
+        sig2_post_new = (d0_new * s0_new + dof_new * sigma2_new) / (d0_new + dof_new)
+
+        # --- 5. Calculate Final Statistics ---
+        vbeta_new = 1.0 / pc_new_ss
+        df_total_new = d0_new + dof_new
+
+        # T-statistics
+        t_raw = post_mean_beta / np.sqrt(sigma2_new * vbeta_new + self.eps)
+        t_moderated = post_mean_beta / np.sqrt(sig2_post_new * vbeta_new + self.eps)
+
+        # P-values
+        pvals = 2 * (1 - t.cdf(np.abs(t_moderated), df_total_new))
+        _, p_adj, _, _ = multipletests(pvals, alpha=self.alpha, method="fdr_bh")
+
+        # Confidence intervals using the moderated variance and t-distribution
+        t_crit = t.ppf(1 - self.alpha / 2, df_total_new)
+        se_beta_moderated = np.sqrt(sig2_post_new * vbeta_new)
+        margin_of_error = t_crit * se_beta_moderated
+        ci_upper = post_mean_beta + margin_of_error
+        ci_lower = post_mean_beta - margin_of_error
+
+        # --- 6. Store Results ---
+        self.coef_ = pd.Series(post_mean_beta, index=selected_probes, name="coef_")
+        self.intercept_ = pd.Series(post_mean_intercept, index=selected_probes, name="intercept_")
+        
+        # Update weights, t-stats, and p-values
+        self.w_ = pd.Series((post_mean_beta**2) / (sig2_post_new + self.eps), index=selected_probes, name="weight")
+        self.t_raw = pd.Series(t_raw, index=selected_probes, name="t_raw")
+        self.t_moderated = pd.Series(t_moderated, index=selected_probes, name="t_moderated")
+        self.pvals = pd.Series(pvals, index=selected_probes, name="p_value")
+        self.p_adj = pd.Series(p_adj, index=selected_probes, name="p_adj")
+        self.df_total = df_total_new
+
+        # Update other model attributes
+        self.probe_ids = list(selected_probes)
+        self.purity_mean = p_mean_new
+        self.probe_mean = pd.Series(X_mean_new, index=selected_probes, name="probe_mean")
+        self.residual_variance = pd.Series(sigma2_new, index=selected_probes, name="residual_variance")
+        self.moderated_variance = pd.Series(sig2_post_new, index=selected_probes, name="moderated_variance")
+        
+        # Update df_stats with all new statistics
         self.df_stats = pd.DataFrame({
-            "coef_prior": self.coef_.reindex(selected_probes),
+            "coef_prior": beta_prior,
             "coef_": post_mean_beta,
             "intercept_": post_mean_intercept,
             "lower_CI": ci_lower,
             "upper_CI": ci_upper,
-            "posterior_se": se_beta
+            "posterior_se": se_beta_moderated, # For compatibility with predict_purity_with_ci
+            "t_raw": t_raw,
+            "t_moderated": t_moderated,
+            "p_value": pvals,
+            "p_adj": p_adj,
         }, index=selected_probes)
-        
-        # --- 5. Store Results ---
-        self.coef_ = pd.Series(post_mean_beta, index=selected_probes, name="coef_")
-        self.intercept_ = pd.Series(post_mean_intercept, index=selected_probes, name="intercept_")
 
-        # Update other model attributes to reflect the fine-tuned state
-        self.probe_ids = list(selected_probes)
-        
-        # Update means
-        self.purity_mean = p_mean_new
-        self.probe_mean = pd.Series(X_mean_new, index=selected_probes, name="probe_mean")
-
-        # Update weights and t-statistics
-        self.w_ = pd.Series((post_mean_beta**2) / (post_var + self.eps), index=selected_probes, name="weight")
-        self.t_moderated = pd.Series(post_mean_beta / (se_beta + self.eps), index=selected_probes, name="t_moderated")
-
-        # Clear stats that are no longer valid
-        self.t_raw = pd.Series(dtype='float64')
-        self.pvals = pd.Series(dtype='float64')
-        self.p_adj = pd.Series(dtype='float64')
         self.is_fine_tuned = True
-
         return self
     
     def predict_purity_with_ci(
