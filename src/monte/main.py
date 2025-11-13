@@ -21,7 +21,7 @@ class Monte:
         self.w_: pd.Series = pd.Series()  # (m,) probe weights (inverse noise)
         self.probe_ids: List = []
         self.best_top_n: Optional[int] = None
-        self.cv_results_: Optional[dict] = None
+        self.best_tau2: Optional[float] = None
 
     # --------------------- FIT ---------------------
     def fit(
