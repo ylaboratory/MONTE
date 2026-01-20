@@ -34,10 +34,9 @@ class Monte:
         purity: length-n purities in [0,1]
         """
 
-        if not isinstance(X, pd.DataFrame):
-            raise ValueError("X must be a pandas DataFrame (samples x probes)")
-        if not isinstance(purity, pd.Series):
-            raise ValueError("purity must be a pandas Series (samples,)")
+        # Validate inputs
+        self._validate_X(X)
+        self._validate_purity(purity)
 
         
         X_arr = X.values.astype(float)
@@ -130,12 +129,9 @@ class Monte:
         return self
 
     def predict_purity(self, X: pd.DataFrame, top_n: Optional[int] = None) -> pd.Series:
-        if not isinstance(X, pd.DataFrame):
-            raise ValueError(
-                "X must be a pandas DataFrame (samples, probes / subset of probes)"
-            )
-        if not self.is_fitted:
-            raise ValueError("Model has not been fitted yet. Fit before purifying.")
+        
+        self._validate_X(X)
+        self._check_is_fitted()
 
         selected_probes = self.probe_ids
         if top_n is not None:
@@ -174,16 +170,11 @@ class Monte:
         Pure tumor reconstruction from the linear mix: T = intercept_ + (X - intercept_)/p.
         """
 
-        if not isinstance(X, pd.DataFrame):
-            raise ValueError(
-                "X must be a pandas DataFrame (samples, probes / subset of probes)"
-            )
-        
+        self._validate_X(X)
+        self._check_is_fitted()
+
         if target_purity < 0.0 or target_purity > 1.0:
             raise ValueError("target_purity must be in [0, 1]")
-
-        if not self.is_fitted:
-            raise ValueError("Model has not been fitted yet. Fit before purifying.")
 
         # check overlap between input and model probes
         overlap_probes = list(set(X.columns).intersection(set(self.probe_ids)))
@@ -278,11 +269,9 @@ class Monte:
         top_n: Optional[int] = None
     ) -> "Monte":
 
-        if not self.is_fitted:
-            raise ValueError("Base model must be fitted before fine-tuning")
-        
-        if not isinstance(X, pd.DataFrame) or not isinstance(purity, pd.Series):
-            raise ValueError("X must be DataFrame, purity must be Series")
+        self._check_is_fitted()
+        self._validate_X(X)
+        self._validate_purity(purity)
 
         # --- 1. Select probes ---
         # Find overlapping probes between the model and the new data
@@ -425,9 +414,9 @@ class Monte:
                 "Run fine_tuning() before calling this method to get confidence intervals."
             )
 
-        if not self.is_fine_tuned:
-            raise ValueError("Model has not been fine-tuned. Run fine_tuning() before predicting purity with confidence intervals.")
-
+        self._check_is_fitted()
+        self._validate_X(X)
+        
         selected_probes = self.probe_ids
         if top_n is not None:
             selected_probes = self.t_moderated.abs().nlargest(top_n).index.to_list()
@@ -474,3 +463,22 @@ class Monte:
             index=X.index,
         )
         return results
+    
+    def _validate_X(self, X: pd.DataFrame):
+        """Validate input DataFrame X for NaN values."""
+        if not isinstance(X, pd.DataFrame):
+            raise ValueError("X must be a pandas DataFrame (samples x probes)")
+        elif X.isnull().any().any():
+            raise ValueError("X contains NaN values. Please handle missing data before using the model.")
+    
+    def _validate_purity(self, purity: pd.Series):
+        """Validate input Series purity for NaN values."""
+        if not isinstance(purity, pd.Series):
+            raise ValueError("purity must be a pandas Series (samples,)")
+        elif purity.isnull().any():
+            raise ValueError("purity contains NaN values. Please handle missing data before using the model.")
+        
+    def _check_is_fitted(self):
+        """Check if the model is fitted."""
+        if not self.is_fitted:
+            raise ValueError("Model has not been fitted yet. Fit the model before using this method.")
