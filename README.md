@@ -136,3 +136,19 @@ model = Monte.load(your_model_saved_path)
 ---
 
 ## Citation
+
+The preprint will be avaiable soon on bioRxiv.
+
+<!-- If you use MONTE in your research, please cite our preprint:
+
+```bibtex
+@article{MONTE2024,
+  title={MONTE: Methylation-based Observation Normalization and Tumor purity Estimation},
+  author={...},
+  journal={bioRxiv},
+  year={2024},
+  doi={...}
+}
+```
+
+The preprint is available on bioRxiv and will be updated with the final citation information upon publication. -->
