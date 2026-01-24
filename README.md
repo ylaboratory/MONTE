@@ -137,18 +137,20 @@ model = Monte.load(your_model_saved_path)
 
 ## Citation
 
-The preprint will be avaiable soon on bioRxiv.
+The preprint is available on [bioRxiv](https://www.biorxiv.org/content/10.64898/2026.01.22.701164v1).
 
-<!-- If you use MONTE in your research, please cite our preprint:
+If you use MONTE in your research, please cite our preprint:
 
 ```bibtex
-@article{MONTE2024,
-  title={MONTE: Methylation-based Observation Normalization and Tumor purity Estimation},
-  author={...},
-  journal={bioRxiv},
-  year={2024},
-  doi={...}
+@article {Kim2026.01.22.701164,
+author = {Kim, Mirae and Lee, Wei-Hao and Yao, Vicky},
+title = {MONTE: Methylation-based Observation Normalization and Tumor purity Estimation},
+elocation-id = {2026.01.22.701164},
+year = {2026},
+doi = {10.64898/2026.01.22.701164},
+publisher = {Cold Spring Harbor Laboratory},
+URL = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164},
+eprint = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164.full.pdf},
+journal = {bioRxiv}
 }
 ```
-
-The preprint is available on bioRxiv and will be updated with the final citation information upon publication. -->
