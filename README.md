@@ -144,20 +144,20 @@ The analysis scripts used in this paper are available in the [MONTE-analysis](ht
 
 ## Citation
 
-The preprint is available on [bioRxiv](https://www.biorxiv.org/content/10.64898/2026.01.22.701164v1).
+The preprint is available on [bioRxiv](https://www.biorxiv.org/content/10.64898/2026.01.22.701164v2).
 
 If you use MONTE in your research, please cite our preprint:
 
 ```bibtex
 @article {Kim2026.01.22.701164,
-author = {Kim, Mirae and Lee, Wei-Hao and Yao, Vicky},
-title = {MONTE: Methylation-based Observation Normalization and Tumor purity Estimation},
-elocation-id = {2026.01.22.701164},
-year = {2026},
-doi = {10.64898/2026.01.22.701164},
-publisher = {Cold Spring Harbor Laboratory},
-URL = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164},
-eprint = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164.full.pdf},
-journal = {bioRxiv}
+  author = {Kim, Mirae and Lee, Wei-Hao and Yao, Vicky},
+  title = {MONTE: Methylation-based Observation Normalization and Tumor purity Estimation},
+  elocation-id = {2026.01.22.701164},
+  year = {2026},
+  doi = {10.64898/2026.01.22.701164},
+  publisher = {Cold Spring Harbor Laboratory},
+  URL = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164},
+  eprint = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164.full.pdf},
+  journal = {bioRxiv}
 }
 ```
