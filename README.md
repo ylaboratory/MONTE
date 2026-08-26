@@ -138,6 +138,8 @@ model = Monte.load(your_model_saved_path)
 
 ## Analysis
 
+The analysis scripts used in this paper are available in the [MONTE-analysis](https://github.com/ylaboratory/MONTE-analysis) repository.
+
 ---
 
 ## Citation
