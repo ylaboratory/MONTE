@@ -5,7 +5,7 @@
 **MONTE**: Methylation-based Observation Normalization and Tumor purity Estimation
 
 > [!NOTE]
-> **Slow git clone speed:** If you experience slow download speeds, this is because we've included all pretrained models in this repository. In a future official release, we plan to move the pretrained models to cloud storage to improve download performance. Thank you for your patience.
+> Pretrained models are downloaded from [Hugging Face](https://huggingface.co/ylab/MONTE-pretrained) when first requested. Downloaded models are stored in the local Hugging Face cache and reused in subsequent calls.
 
 ---
 
@@ -163,13 +163,13 @@ If you use MONTE in your research, please cite our preprint:
 @article {
     Kim2026.01.22.701164,
     author = {Kim, Mirae and Lee, Wei-Hao and Yao, Vicky},
-    title = {MONTE: Methylation-based Observation Normalization and Tumor purity Estimation},
+    title = {MONTE enables unified pan-cancer tumor purity estimation and methylation correction from bulk DNA methylation arrays},
     elocation-id = {2026.01.22.701164},
     year = {2026},
     doi = {10.64898/2026.01.22.701164},
     publisher = {Cold Spring Harbor Laboratory},
-    URL = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164},
-    eprint = {https://www.biorxiv.org/content/early/2026/01/23/2026.01.22.701164.full.pdf},
+    URL = {https://www.biorxiv.org/content/early/2026/08/26/2026.01.22.701164},
+    eprint = {https://www.biorxiv.org/content/early/2026/08/26/2026.01.22.701164.full.pdf},
     journal = {bioRxiv}
 }
 ```
