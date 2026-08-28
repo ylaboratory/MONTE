@@ -15,6 +15,7 @@
   - [Quick naviagation](#quick-naviagation)
   - [Overview](#overview)
   - [Installation](#installation)
+  - [Tutorial](#tutorial)
   - [Instruction and usages](#instruction-and-usages)
     - [Input data](#input-data)
     - [Training the model](#training-the-model)
@@ -45,6 +46,10 @@ conda activate your_env_name
 pip install .
 ```
 
+## Tutorial
+
+We provide a quick-start tutorial for training and using MONTE in [`examples/quick_start.ipynb`](examples/quick_start.ipynb). The example dataset is included with the package. If you would like a more thorough walkthrough, please check the full tutorial. Otherwise, you can find a brief introduction to MONTE below.
+
 ## Instruction and usages
 
 ### Input data
@@ -74,6 +79,12 @@ model = Monte()
 
 # Assume your beta value table is X, and the y is your purity scores
 model.fit(X, y)
+```
+
+Instead of manually train a Monte model, we do provide the hyperparameter tuning function and return the best model
+
+```python
+from monte
 ```
 
 ### Using pretrained models
@@ -138,7 +149,7 @@ model = Monte.load(your_model_saved_path)
 
 ## Analysis
 
-The analysis scripts used in this paper are available in the [MONTE-analysis](https://github.com/ylaboratory/MONTE-analysis) repository.
+The analysis scripts used in this paper, including the plotting scripts are available in the [MONTE-analysis](https://github.com/ylaboratory/MONTE-analysis) repository.
 
 ---
 
