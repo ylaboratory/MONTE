@@ -1,47 +1,62 @@
-import os
+from pathlib import Path
+
+from huggingface_hub import hf_hub_download
+
 from monte.main import Monte
 
-# Registry: model name -> file name
+
+_REPO_ID = "ylab/MONTE-pretrained"
+_REVISION = "v1.0.0"
+
 _PRETRAINED = {
-    'HNSC': 'HNSC.pkl',
-    'PRAD': 'PRAD.pkl',
-    'BLCA': 'BLCA.pkl',
-    'BRCA': 'BRCA.pkl',
-    'ACC': 'ACC.pkl',
-    'LIHC': 'LIHC.pkl',
-    'THCA': 'THCA.pkl',
-    'SKCM': 'SKCM.pkl',
-    'CESC': 'CESC.pkl',
-    'OV': 'OV.pkl',
-    'COAD': 'COAD.pkl',
-    'READ': 'READ.pkl',
-    'KIRC': 'KIRC.pkl',
-    'KIRP': 'KIRP.pkl',
-    'KICH': 'KICH.pkl',
-    'UCEC': 'UCEC.pkl',
-    'UCS': 'UCS.pkl',
-    'LUAD': 'LUAD.pkl',
-    'LUSC': 'LUSC.pkl',
-    'GBM': 'GBM.pkl',
-    'LGG': 'LGG.pkl',
-    'PAN-CANCER': 'PAN-CANCER.pkl',
+    "ACC": "models/ACC.pkl",
+    "BLCA": "models/BLCA.pkl",
+    "BRCA": "models/BRCA.pkl",
+    "CESC": "models/CESC.pkl",
+    "COAD": "models/COAD.pkl",
+    "GBM": "models/GBM.pkl",
+    "HNSC": "models/HNSC.pkl",
+    "KICH": "models/KICH.pkl",
+    "KIRC": "models/KIRC.pkl",
+    "KIRP": "models/KIRP.pkl",
+    "LGG": "models/LGG.pkl",
+    "LIHC": "models/LIHC.pkl",
+    "LUAD": "models/LUAD.pkl",
+    "LUSC": "models/LUSC.pkl",
+    "OV": "models/OV.pkl",
+    "PAN-CANCER": "models/PAN-CANCER.pkl",
+    "PRAD": "models/PRAD.pkl",
+    "READ": "models/READ.pkl",
+    "SKCM": "models/SKCM.pkl",
+    "THCA": "models/THCA.pkl",
+    "UCEC": "models/UCEC.pkl",
+    "UCS": "models/UCS.pkl",
 }
 
 
-def from_pretrained(name: str) -> Monte:
+def available_pretrained_models() -> list[str]:
+    """Return the names of the available pretrained models."""
+    return list(_PRETRAINED)
+
+
+def from_pretrained(
+    name: str,
+    cache_dir: str | Path | None = None,
+) -> Monte:
+    """Download and load a pretrained MONTE model."""
+    name = name.strip().upper().replace("_", "-")
+
     if name not in _PRETRAINED:
         raise ValueError(
-            f"Unknown pretrained model '{name}'. Available: {list(_PRETRAINED.keys())}"
+            f"Unknown pretrained model {name!r}. "
+            f"Available models: {available_pretrained_models()}"
         )
 
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(current_dir, "pretrained_models", _PRETRAINED[name])
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Pretrained model not found at {path}")
+    model_path = hf_hub_download(
+        repo_id=_REPO_ID,
+        filename=_PRETRAINED[name],
+        revision=_REVISION,
+        cache_dir=cache_dir,
+    )
 
-    return Monte.load(path)
-
-
-def available_pretrained_models() -> list:
-    """Returns a list of available pretrained model names."""
-    return list(_PRETRAINED.keys())
+    return Monte.load(model_path)
